@@ -47,6 +47,35 @@ Features:
 
 ## Set Up
 
+### For Windows
+
+Install Python (author is using 3.9)
+
+Create/activate a virtual environment so you are not installing packages globally (optional):
+
+```sh
+$ py -m venv env
+$ source env/Scripts/activate
+```
+
+Install the required packages
+
+```sh
+$ pip install -r requirements.txt
+```
+
+Run the server:
+
+```sh
+$ python server/main.py
+```
+
+Run as many clients as you'd like:
+
+```sh
+$ python client/main.py.py
+```
+
 ### For Linux/Mac
 
 Install Python (author is using 3.9)
