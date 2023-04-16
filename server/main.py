@@ -6,108 +6,123 @@ from flask_socketio import emit, disconnect, SocketIO
 from model.message import Message
 from model.user import User, UserList
 
-# configure and start the app
+# Configure and start the Flask app with the SocketIO extension
 app = Flask(__name__)
 app.secret_key = b"_5#y2L'F4Q8z\n\xec]/"
 socketio = SocketIO(app)
 
 
+# Endpoint to create a new user account using a POST request
 @app.route("/create_account", methods=["POST"])
 def create_account():
-    """Handles account creation from client account information json"""
-    data = request.json
-    new_user = User.from_dto(data)
+    data = request.json # Get request data as JSON
+    new_user = User.from_dto(data) # Create a new User object from the JSON data
 
+	# Attempt to add the new user to the user list
     try:
         users.add(new_user)
     except ValueError:
+		# If adding user fails, return an error response
         return "Invalid Credentials", 401
 
+	# If successful, return a success response
     return "Success", 200
 
 
+# Endpoint to log in a user using a POST request
 @app.route("/login", methods=["POST"])
 def login():
-    """Handles user login from client account information json"""
-    data = request.json
-    user_login = User.from_dto(data)
-    user = users.get_user_by_name(user_login.name)  # first need to check if account exists
+    data = request.json # Get request data as JSON
+    user_login = User.from_dto(data) # Create a User object from the JSON data
+    user = users.get_user_by_name(user_login.name)  # Check if account exists
 
+	# Validate user credentials and session
     if not user or user.password != user_login.password or user.sid != None:
         return "Invalid Credentials", 401
 
+	# If successful, store username in session
     session["username"] = user_login.name
     return "Success", 200
 
 
+# Endpoint to kick a user using a POST request
 @app.route("/kick", methods=["POST"])
 def kick():
-    """Kicks the supplied user"""
-    data = request.json
-    user = users.get_user_by_name(User.from_dto(data).name)
+    data = request.json # Get request data as JSON
+    user = users.get_user_by_name(User.from_dto(data).name) # Get User object from the JSON data
+	
+	# Disconnect user by their Socket.IO session ID
     disconnect(user.sid, "/")
     return "Success", 200
 
+
+# Event handler for outgoing messages
 @socketio.on("message_out")
 def messageout(message_dto):
-    """
-    Socketio "message_out" event to handle messages
-    Emits based on "sender/receiver" field
-    Group receiver is emitted to everyone
-    Otherwise the message is emitted only to the sender (for confirmation) AND receiver
-    Emits to "message_in" event
-    """
+	# Create a Message object from the JSON data
     message = Message.from_dto(message_dto)
+	
+	# Handle group messages
     if message.receiver.name == "group":
         message.type = "PM"
+		# Broadcast the message to all connected clients
         emit("message_out", message.to_dto(), broadcast=True)
     else:
+		# Handle direct messages
         message.type = "DM"
+		# Get the session IDs for the sender and receiver
         receiver_sid = users.get_user_by_name(message.receiver.name).sid
         sender_sid = users.get_user_by_name(message.sender.name).sid
+		
+		# Send the message to the sender and receiver
         emit("message_out", message.to_dto(), room=receiver_sid)
         emit("message_out", message.to_dto(), room=sender_sid)
     
 
+# Event handler for user disconnection
 @socketio.on("disconnect")
 def on_disconnect():
-    """
-    Needs to handle when a User disconnects from SocketIO (seperate from logout)
-    Emits to "user_change" event
-    """
+	# Get the User object from the session
     user = users.get_user_by_name(session.get("username"))
-    if not user:
+    
+	if not user:
         return
-    user.sid = None
+    
+	# Clear the user's Socket.IO session ID and remove the username from the session
+	user.sid = None
     session.pop("username", None)
+	
+	# Broadcast the updated user list to all connected clients
     emit("user_change", users.to_dto(), broadcast=True)
 
 
+# Event handler for user connection
 @socketio.on("connect")
 def connect():
-    """
-    Needs to handle when a User first connects via SocketIO
-    Emits to "user_change" event for all UserList
-    Cannot connect if does not have a session gained from login route
-    """
+	# Get the username from the session
     if session.get("username") is not None:
         user = users.get_user_by_name(session.get("username"))
+		
         if not user:
             return False
+		
+		# Update the user's Socket.IO session ID
         user.sid = request.sid
+		
+		# Broadcast the updated user list to all connected clients
         emit("user_change", users.to_dto(), broadcast=True)
     else:
+		# If there is no username in the session, do not allow the connection
         return False
     
 
-# run the app
 if __name__ == "__main__":
     try:
-        # load existing data
+        # Attempt to load existing user data from a file
         with open("users.pickle", "rb") as f:
             users = pickle.load(f)
     except:
-        # create empty file if does not exist
+        # If the file does not exist, create a new file with an empty user list and an admin user
         with open("users.pickle", "wb") as f:
             users = UserList()
             # create admin superuser
@@ -115,4 +130,5 @@ if __name__ == "__main__":
             users.add(admin)
             pickle.dump(users, f)
 
+	# Start the Flask-SocketIO app
     socketio.run(app)
